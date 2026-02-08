@@ -7,9 +7,9 @@ import { ethers } from "ethers";
 import { useEffect, useState } from "react";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
-import { WalletGenerator } from "./WalletGenerator";
 import { WalletCard } from "./WalletCard";
 import { RecoveryPhraseDisplay } from "./RecoveryPhraseDisplay";
+import { useRouter } from "next/navigation";
 
 interface WalletData {
     publicKey: string;
@@ -21,6 +21,7 @@ export const GenerateWallet = () => {
     const [wallets, setWallets] = useState<WalletData[]>([]);
     const [secretRecoveryPhrase, setSecretRecoveryPhrase] = useState("");
     const [walletType, setWalletType] = useState<"Solana" | "Ethereum">("Solana");
+    const router = useRouter();
 
     const handleAddWallet = () => {
         try {
@@ -134,6 +135,17 @@ export const GenerateWallet = () => {
                                         />
                                     </svg>
                                     Add Wallet
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        window.localStorage.removeItem("wallets");
+                                        window.localStorage.removeItem("secretRecoveryPhrase");
+                                        setSecretRecoveryPhrase("");
+                                        setWallets([]);
+                                        router.push("/");
+                                    }}
+                                    className="px-4 py-2 bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold rounded-lg shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-all duration-200 flex items-center gap-2">
+                                    Clear Wallet
                                 </button>
                                 
                                 <span className="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-gray-400 font-semibold">
