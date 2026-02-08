@@ -1,136 +1,172 @@
+"use client";
+
 import { Keypair } from "@solana/web3.js";
 import { generateMnemonic, mnemonicToSeedSync } from "bip39";
 import { derivePath } from "ed25519-hd-key";
 import { ethers } from "ethers";
 import { useEffect, useState } from "react";
-import nacl, { SignKeyPair } from "tweetnacl";
-import bs58 from 'bs58'
+import nacl from "tweetnacl";
+import bs58 from "bs58";
+import { WalletGenerator } from "./WalletGenerator";
+import { WalletCard } from "./WalletCard";
+import { RecoveryPhraseDisplay } from "./RecoveryPhraseDisplay";
 
-enum WalletType {
-    Solana,
-    Ethereum
-}
-
-interface Key {
-    publicKey: string; privateKey: string
+interface WalletData {
+    publicKey: string;
+    privateKey: string;
+    type: "Solana" | "Ethereum";
 }
 
 export const GenerateWallet = () => {
-    const [keys, setKeys] = useState<(Key)[]>([]);
+    const [wallets, setWallets] = useState<WalletData[]>([]);
     const [secretRecoveryPhrase, setSecretRecoveryPhrase] = useState("");
-    const [walletType, setWalletType] = useState<WalletType>(WalletType.Solana);
-    let userSecretRecoveryPhrase = "";
+    const [walletType, setWalletType] = useState<"Solana" | "Ethereum">("Solana");
 
-
-    const handleGenerateWallet = (secretRecoveryPhrase: string, type: WalletType) => {
+    const handleGenerateWallet = (customPhrase?: string) => {
         try {
             const storedMnemonic = window.localStorage.getItem("secretRecoveryPhrase");
-            // console.log("Stored mnemonic: ",storedMnemonic);
-            const mnemonic = storedMnemonic || secretRecoveryPhrase || generateMnemonic();
-            // console.log("Used mnemonic: ", mnemonic)
-            setSecretRecoveryPhrase(mnemonic);
-            !storedMnemonic && window.localStorage.setItem("secretRecoveryPhrase", mnemonic);
-            const seed = mnemonicToSeedSync(mnemonic);
-            
-            const storedKeys = window.localStorage.getItem("keypairs")
-            // console.log("Stored keys: ",storedKeys)
-            const keypairArray = storedKeys && JSON.parse(storedKeys);
-            // console.log("Keypair Array:", keypairArray)
+            const mnemonic = customPhrase || storedMnemonic || generateMnemonic();
+            console.log("Used mnemonic Mnemonic:", mnemonic);
 
-            let n=0;
-            
-            if (keypairArray) {
-                n = keypairArray.length + 1
+            setSecretRecoveryPhrase(mnemonic);
+            if (!storedMnemonic) {
+                window.localStorage.setItem("secretRecoveryPhrase", mnemonic);
             }
-            else{
-                n = 1;
-            }
-            // console.log("Generating wallet, n =", n);
-            let derivationPath = `m/44'/501'/${n}'/0'`;
-            let deriveSeed;
-            let secret;
+
+            const seed = mnemonicToSeedSync(mnemonic);
+            const storedWallets = window.localStorage.getItem("wallets");
+            const walletArray: WalletData[] = storedWallets ? JSON.parse(storedWallets) : [];
+
+            // Count wallets of the same type to determine the derivation path index
+            const sameTypeWallets = walletArray.filter((w) => w.type === walletType);
+            const n = sameTypeWallets.length;
+
+            let derivationPath: string;
             let pubKey = "";
             let pvtKey = "";
-            switch (type) {
-                case WalletType.Solana:
-                    derivationPath = `m/44'/501'/${n}'/0'`;
-                    deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
-                    secret = nacl.sign.keyPair.fromSeed(deriveSeed).secretKey;
-                    pubKey = Keypair.fromSecretKey(secret).publicKey.toBase58();
-                    pvtKey = bs58.encode(secret);
-                    // console.log("Public key", pubKey)
-                    break;
 
-                case WalletType.Ethereum:
-                    derivationPath = `m/44'/60'/${n}'/0'`;
-                    deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
-                    pvtKey = Buffer.from(deriveSeed).toString("hex");
-                    const wallet = new ethers.Wallet(pvtKey);
-                    pubKey = wallet.address;
-                    break;
-
-                default:
-                    break;
+            if (walletType === "Solana") {
+                derivationPath = `m/44'/501'/${n}'/0'`;
+                console.log("Derivation Path:", derivationPath);
+                const deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
+                const secret = nacl.sign.keyPair.fromSeed(deriveSeed).secretKey;
+                pubKey = Keypair.fromSecretKey(secret).publicKey.toBase58();
+                pvtKey = bs58.encode(secret);
+            } else {
+                // Ethereum
+                derivationPath = `m/44'/60'/${n}'/0'`;
+                console.log("Derivation Path:", derivationPath);
+                const deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
+                pvtKey = Buffer.from(deriveSeed).toString("hex");
+                const wallet = new ethers.Wallet(pvtKey);
+                pubKey = wallet.address;
             }
 
-            if (pubKey === "" || pvtKey === "") {
-                throw new Error("Public Key or private key now found");
+            if (!pubKey || !pvtKey) {
+                throw new Error("Failed to generate wallet keys");
             }
-            const keypair: Key = { publicKey: pubKey, privateKey: pvtKey };
-            console.log("Keypair: ",keypair);
-            setKeys((prev) =>{
-                const updated = [...prev, keypair];
-                window.localStorage.setItem("keypairs", JSON.stringify(updated))
+
+            const newWallet: WalletData = {
+                publicKey: pubKey,
+                privateKey: pvtKey,
+                type: walletType,
+            };
+
+            setWallets((prev) => {
+                const updated = [...prev, newWallet];
+                window.localStorage.setItem("wallets", JSON.stringify(updated));
                 return updated;
             });
-
-            // console.log("Wallet generated")
-            // console.log(pvtKey)
         } catch (error) {
-
+            console.error("Error generating wallet:", error);
         }
     };
 
     useEffect(() => {
         const storedSecretRecoveryPhrase = window.localStorage.getItem("secretRecoveryPhrase");
-        const storedKeys = window.localStorage.getItem("keypairs");
-        const keypairArray = storedKeys && JSON.parse(storedKeys);
-        if (storedSecretRecoveryPhrase && storedKeys) {
+        const storedWallets = window.localStorage.getItem("wallets");
+
+        if (storedSecretRecoveryPhrase) {
             setSecretRecoveryPhrase(storedSecretRecoveryPhrase);
-            setKeys(keypairArray);
+        }
+
+        if (storedWallets) {
+            setWallets(JSON.parse(storedWallets));
         }
     }, []);
+
     return (
-        <div className="py-7 px-8">
-            <input
-                type="text"
-                placeholder="Enter your secret recovery phrase"
-                name="recoveryPhrase"
-                value={userSecretRecoveryPhrase}
-                onChange={(e) => userSecretRecoveryPhrase = e.target.value}
-                className="border-amber-100 border-2 text-xl w-full my-4 px-4"
-            />
-            <button className="bg-white" onClick={() => setWalletType(WalletType.Solana)}>Solana</button>
-            <button className="bg-white" onClick={() => setWalletType(WalletType.Ethereum)}>Ethereum</button>
-            <button onClick={() => {
-                handleGenerateWallet(secretRecoveryPhrase, walletType);
-                userSecretRecoveryPhrase = "";
-            }}>
-                Generate wallet
-            </button>
-            <div className="mt-4">
-                {keys.map((key, index) => (
-                    <div key={index} className="mb-2">
-                        <p>
-                            <strong>Public Key:</strong>{" "}
-                            {key.publicKey}
-                        </p>
-                        <p>
-                            <strong>Private Key:</strong>{" "}
-                            {key.privateKey}
+        <div className="min-h-screen bg-black py-12 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-6xl mx-auto space-y-8">
+                {/* Header */}
+                <div className="text-center mb-12">
+                    <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-linear-to-r from-amber-400 to-amber-600 mb-4">
+                        Crypto Wallet Generator
+                    </h1>
+                    <p className="text-gray-400 text-lg">
+                        Securely generate and manage your Solana and Ethereum wallets
+                    </p>
+                </div>
+
+                {/* Recovery Phrase Display */}
+                {secretRecoveryPhrase && (
+                    <RecoveryPhraseDisplay phrase={secretRecoveryPhrase} />
+                )}
+
+                {/* Wallet Generator */}
+                <WalletGenerator
+                    walletType={walletType}
+                    onWalletTypeChange={setWalletType}
+                    onGenerateWallet={handleGenerateWallet}
+                />
+
+                {/* Wallets List */}
+                {wallets.length > 0 && (
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-3xl font-bold text-amber-400">Your Wallets</h2>
+                            <span className="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-gray-400 font-semibold">
+                                {wallets.length} {wallets.length === 1 ? "Wallet" : "Wallets"}
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {wallets.map((wallet, index) => (
+                                <WalletCard
+                                    key={index}
+                                    publicKey={wallet.publicKey}
+                                    privateKey={wallet.privateKey}
+                                    walletType={wallet.type}
+                                    index={index}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Empty State */}
+                {wallets.length === 0 && (
+                    <div className="text-center py-16 bg-linear-to-br from-gray-900 to-black border border-gray-800 rounded-2xl">
+                        <div className="w-20 h-20 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <svg
+                                className="w-10 h-10 text-amber-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                                />
+                            </svg>
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-400 mb-2">No Wallets Yet</h3>
+                        <p className="text-gray-500">
+                            Generate your first wallet to get started
                         </p>
                     </div>
-                ))}
+                )}
             </div>
         </div>
     );
