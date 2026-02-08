@@ -1,6 +1,14 @@
 "use client";
 
+import { Keypair } from "@solana/web3.js";
+import { generateMnemonic, mnemonicToSeedSync } from "bip39";
+import { derivePath } from "ed25519-hd-key";
 import { useState } from "react";
+import nacl from "tweetnacl";
+import bs58 from "bs58";
+import { ethers } from "ethers";
+import { useRouter } from "next/navigation";
+
 
 interface WalletGeneratorProps {
   walletType: "Solana" | "Ethereum";
@@ -8,16 +16,83 @@ interface WalletGeneratorProps {
   onGenerateWallet: (recoveryPhrase?: string) => void;
 }
 
-export const WalletGenerator = ({
-  walletType,
-  onWalletTypeChange,
-  onGenerateWallet,
-}: WalletGeneratorProps) => {
+interface WalletData {
+    publicKey: string;
+    privateKey: string;
+    type: "Solana" | "Ethereum";
+}
+
+export const WalletGenerator = () => {
   const [customPhrase, setCustomPhrase] = useState("");
+  const [walletType, setWalletType] = useState<"Solana" | "Ethereum">("Solana");
+  const [secretRecoveryPhrase, setSecretRecoveryPhrase] = useState("");
+  const [wallets, setWallets] = useState<WalletData[]>([]);
+  const router = useRouter();
+
+  const handleGenerateWallet = (customPhrase?: string) => {
+          try {
+              const storedMnemonic = window.localStorage.getItem("secretRecoveryPhrase");
+              const mnemonic = customPhrase || storedMnemonic || generateMnemonic();
+              console.log("Used mnemonic Mnemonic:", mnemonic);
+  
+              setSecretRecoveryPhrase(mnemonic);
+              if (!storedMnemonic) {
+                  window.localStorage.setItem("secretRecoveryPhrase", mnemonic);
+              }
+  
+              const seed = mnemonicToSeedSync(mnemonic);
+              const storedWallets = window.localStorage.getItem("wallets");
+              const walletArray: WalletData[] = storedWallets ? JSON.parse(storedWallets) : [];
+  
+              // Count wallets of the same type to determine the derivation path index
+              const sameTypeWallets = walletArray.filter((w) => w.type === walletType);
+              const n = sameTypeWallets.length;
+  
+              let derivationPath: string;
+              let pubKey = "";
+              let pvtKey = "";
+  
+              if (walletType === "Solana") {
+                  derivationPath = `m/44'/501'/${n}'/0'`;
+                  console.log("Derivation Path:", derivationPath);
+                  const deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
+                  const secret = nacl.sign.keyPair.fromSeed(deriveSeed).secretKey;
+                  pubKey = Keypair.fromSecretKey(secret).publicKey.toBase58();
+                  pvtKey = bs58.encode(secret);
+              } else {
+                  // Ethereum
+                  derivationPath = `m/44'/60'/${n}'/0'`;
+                  console.log("Derivation Path:", derivationPath);
+                  const deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
+                  pvtKey = Buffer.from(deriveSeed).toString("hex");
+                  const wallet = new ethers.Wallet(pvtKey);
+                  pubKey = wallet.address;
+              }
+  
+              if (!pubKey || !pvtKey) {
+                  throw new Error("Failed to generate wallet keys");
+              }
+  
+              const newWallet: WalletData = {
+                  publicKey: pubKey,
+                  privateKey: pvtKey,
+                  type: walletType,
+              };
+  
+              setWallets((prev) => {
+                  const updated = [...prev, newWallet];
+                  window.localStorage.setItem("wallets", JSON.stringify(updated));
+                  return updated;
+              });
+          } catch (error) {
+              console.error("Error generating wallet:", error);
+          }
+      };
 
   const handleGenerate = () => {
-    onGenerateWallet(customPhrase.trim() || undefined);
+    handleGenerateWallet(customPhrase.trim() || undefined);
     setCustomPhrase("");
+    router.push("/wallets"); 
   };
 
   return (
@@ -31,7 +106,7 @@ export const WalletGenerator = ({
         </label>
         <div className="flex gap-3">
           <button
-            onClick={() => onWalletTypeChange("Solana")}
+            onClick={() => setWalletType("Solana")}
             className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all duration-200 ${
               walletType === "Solana"
                 ? "bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/50 scale-105"
@@ -41,7 +116,7 @@ export const WalletGenerator = ({
             Solana
           </button>
           <button
-            onClick={() => onWalletTypeChange("Ethereum")}
+            onClick={() => setWalletType("Ethereum")}
             className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all duration-200 ${
               walletType === "Ethereum"
                 ? "bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/50 scale-105"

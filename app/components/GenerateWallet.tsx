@@ -20,67 +20,8 @@ interface WalletData {
 export const GenerateWallet = () => {
     const [wallets, setWallets] = useState<WalletData[]>([]);
     const [secretRecoveryPhrase, setSecretRecoveryPhrase] = useState("");
-    const [walletType, setWalletType] = useState<"Solana" | "Ethereum">("Solana");
 
-    const handleGenerateWallet = (customPhrase?: string) => {
-        try {
-            const storedMnemonic = window.localStorage.getItem("secretRecoveryPhrase");
-            const mnemonic = customPhrase || storedMnemonic || generateMnemonic();
-            console.log("Used mnemonic Mnemonic:", mnemonic);
-
-            setSecretRecoveryPhrase(mnemonic);
-            if (!storedMnemonic) {
-                window.localStorage.setItem("secretRecoveryPhrase", mnemonic);
-            }
-
-            const seed = mnemonicToSeedSync(mnemonic);
-            const storedWallets = window.localStorage.getItem("wallets");
-            const walletArray: WalletData[] = storedWallets ? JSON.parse(storedWallets) : [];
-
-            // Count wallets of the same type to determine the derivation path index
-            const sameTypeWallets = walletArray.filter((w) => w.type === walletType);
-            const n = sameTypeWallets.length;
-
-            let derivationPath: string;
-            let pubKey = "";
-            let pvtKey = "";
-
-            if (walletType === "Solana") {
-                derivationPath = `m/44'/501'/${n}'/0'`;
-                console.log("Derivation Path:", derivationPath);
-                const deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
-                const secret = nacl.sign.keyPair.fromSeed(deriveSeed).secretKey;
-                pubKey = Keypair.fromSecretKey(secret).publicKey.toBase58();
-                pvtKey = bs58.encode(secret);
-            } else {
-                // Ethereum
-                derivationPath = `m/44'/60'/${n}'/0'`;
-                console.log("Derivation Path:", derivationPath);
-                const deriveSeed = derivePath(derivationPath, seed.toString("hex")).key;
-                pvtKey = Buffer.from(deriveSeed).toString("hex");
-                const wallet = new ethers.Wallet(pvtKey);
-                pubKey = wallet.address;
-            }
-
-            if (!pubKey || !pvtKey) {
-                throw new Error("Failed to generate wallet keys");
-            }
-
-            const newWallet: WalletData = {
-                publicKey: pubKey,
-                privateKey: pvtKey,
-                type: walletType,
-            };
-
-            setWallets((prev) => {
-                const updated = [...prev, newWallet];
-                window.localStorage.setItem("wallets", JSON.stringify(updated));
-                return updated;
-            });
-        } catch (error) {
-            console.error("Error generating wallet:", error);
-        }
-    };
+    
 
     useEffect(() => {
         const storedSecretRecoveryPhrase = window.localStorage.getItem("secretRecoveryPhrase");
@@ -98,27 +39,11 @@ export const GenerateWallet = () => {
     return (
         <div className="min-h-screen bg-black py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-6xl mx-auto space-y-8">
-                {/* Header */}
-                <div className="text-center mb-12">
-                    <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-linear-to-r from-amber-400 to-amber-600 mb-4">
-                        Crypto Wallet Generator
-                    </h1>
-                    <p className="text-gray-400 text-lg">
-                        Securely generate and manage your Solana and Ethereum wallets
-                    </p>
-                </div>
 
                 {/* Recovery Phrase Display */}
                 {secretRecoveryPhrase && (
                     <RecoveryPhraseDisplay phrase={secretRecoveryPhrase} />
                 )}
-
-                {/* Wallet Generator */}
-                <WalletGenerator
-                    walletType={walletType}
-                    onWalletTypeChange={setWalletType}
-                    onGenerateWallet={handleGenerateWallet}
-                />
 
                 {/* Wallets List */}
                 {wallets.length > 0 && (
