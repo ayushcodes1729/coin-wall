@@ -22,7 +22,11 @@ export default function Home() {
         </p>
       </div>
       {/* Wallet Generator */}
-                <WalletGenerator/>
+      <div className="flex justify-center px-4">
+        <div className="w-full max-w-2xl">
+          <WalletGenerator/>
+        </div>
+      </div>
     </div>
   );
 }
